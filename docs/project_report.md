@@ -1,215 +1,168 @@
-# Integrated Retail Analytics for Store Optimization and Demand Forecasting
+# Integrated Retail Analytics: Project Report
 
-## Executive summary
+This report describes Integrated_Retail_Analytics_Store_Optimization.ipynb and its supplied saved outputs. The previous notebook's historical-mean forecasts, two-cluster solution, anomaly rules and evaluation periods do not apply to this analysis. Results below were transcribed from the new notebook; full training was not rerun during this documentation update.
 
-This project analyzes 421,570 weekly store-department sales records from 45 stores and 81 departments, covering 5 February 2010 to 26 October 2012. The objective is to improve the evidence available for inventory planning, store-level marketing and sales forecasting. The supplied data includes store characteristics, five anonymized markdown fields, temperature and economic indicators.
+## 1. Business problem and data
 
-The workflow combines data validation, ten exploratory charts and five analysis/evaluation charts, three hypothesis tests, interpretable anomaly rules, K-means store segmentation, a department co-movement proxy and chronological sales forecasting. The completed notebook contains the code and rendered outputs; this report explains the business reasoning and practical limitations.
+The project studies weekly department revenue to support store planning, anomaly review, format-specific merchandising and forecasting. It also illustrates inventory buffers. Revenue is observed sales, not unconstrained demand: no stockout labels, unit prices, physical quantities, supplier lead-time observations, customer identities or purchase baskets are available.
 
-The main exploratory findings are strong differences in store scale, seasonal peaks and considerable missingness in markdown fields. The best tested store segmentation has two groups, with a silhouette score of 0.345. Department pairs show simultaneous high sales, but there are no customer transactions and therefore no evidence of actual basket purchases. Historical store-department averages outperform the tested trees on validation and are selected, with held-out MAE of 2,266.30. A separate 26-week seasonal baseline improves over historical means on its own evaluation block. The historical and seasonal baselines provide useful reference forecasts.
-
-## 1. Business problem and data scope
-
-A retailer needs to identify unusual sales, anticipate weekly revenue and target operational reviews. Forecast errors can create poor stock decisions, while mistaken anomaly removal can erase real holiday peaks. Store profiles can support more relevant campaigns, and department co-movement can suggest ideas for controlled trials.
-
-The outcome is weekly monetary sales. It is not directly a forecast of physical units or unconstrained demand: stockouts, product prices, margins, lead times and customer baskets are absent. Recommendations are therefore planning proposals rather than demonstrated profit improvements.
-
-**Repository:** https://github.com/saiabhiram-simhadri/integrated-retail-analytics-store-optimization
-
-
-
-## 2. Data understanding and preprocessing
-
-| Input | Rows | Level |
+| Input | Rows | Grain |
 |---|---:|---|
 | sales.csv | 421,570 | Store-department-week |
-| Features.csv | 8,190 | Store-week, including dates beyond the sales labels |
+| Features.csv | 8,190 | Store-week |
 | stores.csv | 45 | Store |
 
-All dates are parsed explicitly as day/month/year. The sales table is left-joined to features on Store and Date and then to stores on Store. Many-to-one validation prevents duplicate feature or store rows from multiplying observations. Every sale matched its store-week features, holiday flags agreed, and the joined row count stayed equal to the input sales count. No duplicate sales keys were found.
+Sales cover 143 weeks from 5 February 2010 through 26 October 2012. Features cover 182 dates, including weeks beyond available sales. Store format is coded A/B/C; business persona names are analytical interpretations rather than verified format definitions.
 
-The notebook reports column types, descriptive statistics, unique counts, missing counts and sample rows before modeling. There are 1,285 negative sales entries. These are retained as possible returns or adjustments rather than being assumed invalid. Missing markdowns are zero-filled for modeling with a separate missingness flag. Other numeric fields use medians fitted separately within each training fold.
+The notebook downloads CSVs from shared Google Drive links. Local supplied CSVs also exist under data/. Dates are parsed explicitly as DD/MM/YYYY. Sales are left-joined to stores by Store, then to features by Store and Date; the duplicate holiday column is removed. The resulting analytical mart has 421,570 rows and 23 columns. The current merge code does not explicitly validate join cardinality or holiday agreement.
 
-Store, department and format are categorical predictors. Calendar features include year, month, ISO week and elapsed week number. Store size, temperature, CPI, unemployment, fuel prices and promotion fields provide additional context. No current-week sales aggregate or target-derived anomaly flag is used as a forecasting input.
+The source tables report no duplicate rows. Features contain 24,040 missing values, including substantial markdown missingness and 585 missing values each for CPI and unemployment. Each markdown receives a presence indicator, then missing amounts are filled with zero. CPI and unemployment use per-store forward/backward filling before the later entity/date sort; this is not a training-only imputation procedure.
 
-![Missingness by field](../outputs/figures/01_missingness.png)
+The 1,285 negative sales records (0.305%) receive an Is_Return_Adjustment flag. Raw Weekly_Sales is preserved, while Weekly_Sales_Clean clips negative values to zero. Consequently the clean target represents a modified revenue measure rather than original net revenue.
 
-*Figure 1. Missing promotion reports require an explicit modeling assumption; zero filling does not prove that no promotion occurred.*
+## 2. Exploratory analysis: 15 figures
 
-## 3. Exploratory analysis and visual storytelling
+All 20 figures from the integrated notebook are available in the [chart gallery](../outputs/figures/README.md). The first 15 cover distribution, format, promotions, weather, economics, time patterns, PCA and department relationships.
 
-The ten exploratory charts cover missingness, sales distribution, weekly and monthly patterns, holidays, department rankings, store size, promotions, numeric correlations and relationships by store type. Five further charts show anomaly flags, store segments, department associations, validation metrics and held-out forecasts. Temperature and economic indicators are examined in the correlation heatmap; the pair plot also shows temperature and store type.
+![Sales distribution](../outputs/figures/01_sales_distribution.png)
 
-The sales distribution is right-skewed, so average and median sales describe different aspects of performance. The distribution chart limits its display to nonnegative observations below the 99th percentile; it does not delete the excluded rows from analysis. Weekly sales have visible seasonal spikes, so high values require investigation before correction.
+The first figure compares nonnegative cleaned sales with log(1 + sales). Although the left panel says raw sales, its code uses Weekly_Sales_Clean. Right skew makes average and typical department performance different concepts.
 
-![Weekly sales](../outputs/figures/04_weekly_sales.png)
+![Store type shares](../outputs/figures/03_store_type_shares.png)
 
-*Figure 2. Chain-level weekly sales provide seasonal context. The notebook prints the exact highest-sales week and its value.*
+Physical-size box plots and outlet/revenue shares provide context for differences between formats. Mean weekly department sales are $20,099.77 for A, $12,237.33 for B and $9,519.64 for C. These are department-row averages, not total weekly store revenue. Store scale and department composition confound comparisons of efficiency.
 
-Monthly means reduce the distortion from unequal numbers of observed weeks, but the series contains incomplete calendar years and changing department coverage. Holiday/nonholiday mean comparisons use the supplied flag, which does not capture every seasonal occasion. Neither chart isolates a causal effect.
+![Holiday sales](../outputs/figures/07_holiday_sales.png)
 
-Store size is strongly associated with average store-week sales (Pearson correlation approximately 0.85). Type A has the highest average store-week sales. Format, size and department mix overlap, so these differences do not establish store efficiency or the return on expansion.
+Holiday rows average $17,036.09 versus $15,901.65 for ordinary weeks, an observed difference of $1,134.44 (about 7.13%). This association does not establish an incremental holiday or promotion effect.
 
-![Store size and sales](../outputs/figures/10_size_sales.png)
+The markdown distribution excludes zeros and suppresses displayed fliers. MarkDown1 versus sales uses up to 5,000 positive-event rows. Temperature and unemployment figures describe record-level exposure, while the dual-axis fuel plot compares weekly mean fuel price with chain sales. Features repeated across department rows weight these summaries by department coverage; markdown distributions do not measure unique store-week spending.
 
-*Figure 3. Larger stores tend to sell more, with considerable variation across individual stores.*
+![Numeric correlations](../outputs/figures/11_correlation_heatmap.png)
 
-Recorded total markdowns have a positive store-week correlation with sales (approximately 0.23). Temperature has a weak aggregate correlation (approximately −0.06). CPI, unemployment and fuel-price correlations with store-week sales are approximately −0.07, −0.11 and 0.01. These descriptive associations do not establish causal contributions. Large stores and seasonal timing can confound promotion comparisons.
+The correlation heatmap and signed target-correlation bars show linear associations. Size has a department-sales correlation of approximately 0.24. Weak macroeconomic correlations do not prove irrelevance, and split importances do not prove nonlinear causal effects. Type-specific time series reveal scale and seasonality. The first PCA projects four store summaries (mean sales, sales SD, size and mean MarkDown1 + MarkDown5); it differs from the later eight-feature clustering PCA. The department heatmap uses the top ten revenue departments with complete co-observed store-weeks.
 
-Promotion amounts are aggregated once per store-week. Summing the feature values once per sales row would duplicate the same promotion information across departments and exaggerate totals.
+## 3. Statistical tests
 
-![Correlation heatmap](../outputs/figures/14_correlation.png)
+The notebook conducts three tests at alpha=0.05, without a multiple-test correction in its implementation.
 
-*Figure 4. Numeric relationships are interpreted jointly; a weak aggregate coefficient does not prove a variable is irrelevant within a department or season.*
+| Question | Test | Statistic | Reported p-value |
+|---|---|---:|---:|
+| Holiday sales greater than regular sales | One-sided Welch t-test | 7.0012 | 1.2935e-12 |
+| Equal mean sales across A/B/C | One-way ANOVA | 7,764.5205 | Printed as 0.0000e+00 |
+| Active markdown independent of above-median sales | Chi-square, 1 df | 6.3712 | 0.011599 |
 
-Every notebook chart states its purpose, observed finding and practical implication or downside. A consistent dark seaborn theme, readable axis labels and selected bar annotations make the figures easier to compare. Figures are saved as 200-DPI PNGs with the custom dark background and tight margins in outputs/figures/. Chain-level time plots show sales in millions; the underlying analysis uses the original sales values.
+Printed zero is numerical underflow/display precision, not an exact zero probability. All three reject their null hypotheses under the notebook's nominal threshold. They operate on repeated department-week rows rather than independent store summaries: shared store, date and seasonal exposures weaken independence assumptions. Significance should therefore be treated as exploratory.
 
-## 4. Exploratory hypothesis testing
+For inactive markdown rows, below/at-median and above-median counts are 134,676 and 135,462; active markdown counts are 76,110 and 75,322. The active group has a slightly lower above-median proportion (about 49.74% versus 50.15%). The test establishes association in this table, not promotional uplift.
 
-Three two-sided tests use a 5% level with Bonferroni correction for three questions. Each store contributes one summary or one paired comparison, avoiding the assumption that all department-weeks are independent.
+## 4. Anomaly detection and target handling
 
-| Question | Method | Adjusted p-value | Decision |
-|---|---|---:|---|
-| Holiday versus nonholiday store means | Wilcoxon signed-rank | 1.30 × 10⁻¹⁰ | Reject H0 |
-| Store size versus average weekly sales | Spearman correlation | 8.45 × 10⁻¹³ | Reject H0 |
-| Positive recorded markdown versus zero/unreported weeks | Wilcoxon signed-rank | 0.000574 | Reject H0 |
+The contextual detector computes a full-period median and standard deviation for each department and ISO week-of-year. Absolute residual Z above 3 flags 3,665 rows (0.87%): 3,664 positive surges and one negative drop. Among positive surges, 7.6% occur on supplied holidays and 33.3% have an active markdown. These fields provide context, not verified root causes.
 
-The Spearman size-sales statistic is about 0.845. These results suggest systematic associations in the observed data. Stores still share seasonal and economic exposure, and recorded-promotion availability is confounded by time. Statistical significance is not campaign effectiveness, practical effect size or proof of causality.
+Isolation Forest uses RobustScaler and six inputs: cleaned sales, size, temperature, fuel price, MarkDown1 and MarkDown5. With 150 estimators, contamination=0.015 and seed 47, it flags 6,324 rows (1.50%). The contamination setting partly determines review volume; no verified anomaly labels support precision or recall claims.
 
-## 5. Anomaly detection and handling
+Weekly_Sales_ModelReady starts from the clipped target. A negative-drop rule proposes seasonal-median replacement except for return adjustments, but the recorded run imputes **zero** rows. It winsorizes 2,280 positive surges having neither a holiday flag nor total markdown expenditure, using each department's full-period 99th percentile. Other surges are retained. Isolation Forest flags are descriptive and excluded from forecasting inputs; they do not drive this winsorization.
 
-The first anomaly model fits Q1 and Q3 to each training store-department series. Values outside Q1 − 3×IQR or Q3 + 3×IQR are flagged. The conservative multiplier avoids automatically labeling every large sale as an error. Bounds and fit dates are saved as a reusable artifact.
+These rules do not demonstrate stockouts or data corruption. Full-period seasonal statistics and percentiles include holdout information and also modify holdout targets. This is a material limitation for independent forecasting assessment.
 
-The notebook prints holiday-specific flag rates and the largest positive deviations alongside dates and markdown totals. The fitted IQR rule flags 7,141 observations (about 1.69% of rows), and the store-department trailing rule flags 26,169 observations (about 6.21%). These counts are review volumes, not verified error counts. Date and promotion fields help form hypotheses about holiday demand, promotions, returns or reporting issues; the dataset cannot confirm the cause.
+## 5. Store segmentation
 
-A separate time-based rule uses each series' preceding eight observed weeks, with a minimum of four, to calculate a median and standard deviation. A one-row shift ensures the current observation does not define its own reference. Absolute deviations above three past standard deviations are review candidates. Missing calendar weeks mean eight observations may span more than eight weeks. The chain-level chart uses the same trailing logic.
+Eight full-period store features feed StandardScaler and K-means: mean department sales, department-sales SD, size, mean total markdown, holiday/regular sales ratio, mean department sales divided by store area, unemployment and CPI. Sales volatility here pools department rows and weeks; it is not the standard deviation of total weekly store sales.
 
-![Time anomalies](../outputs/figures/16_time_anomalies.png)
+The notebook plots inertia, silhouette and Davies-Bouldin diagnostics for k=2 through 6, then explicitly sets k=3 with n_init=20. It does not programmatically choose the silhouette maximum; the former analysis's k=2 and silhouette 0.345 are not applicable.
 
-*Figure 5. Flags identify weeks to review, including possible legitimate seasonal changes.*
-
-Original sales remain the target in the main experiment. A fixed decision-tree diagnostic compares raw targets with training-only IQR clipping on the first validation block. Validation and test sales are never clipped. Review the diagnostic table before recommending correction. There are no verified anomaly labels, so the project does not invent precision or recall scores.
-
-## 6. Store segmentation and personalization
-
-Customer-level segmentation is impossible with these files. K-means instead groups stores using six training-period features: mean weekly store sales, sales standard deviation, store size, recorded markdown mean, CPI and unemployment. Median imputation and standardization precede clustering so units do not dominate distances.
-
-| k | Silhouette |
-|---:|---:|
-| 2 | 0.345 |
-| 3 | 0.250 |
-| 4 | 0.304 |
-| 5 | 0.310 |
-
-Two clusters score best among the tested options. Inertia is also reported; it falls as more groups are allowed and is not by itself a reason to select the largest k. Separation is moderate, and results are exploratory with only 45 stores.
-
-| Segment | Stores | Mean weekly store sales | Mean weekly sales SD | Mean store size | Mean recorded markdown |
-|---|---:|---:|---:|---:|---:|
-| 0 | 23 | 606,588 | 81,623 | 85,509 | 2,711 |
-| 1 | 22 | 1,509,661 | 222,148 | 177,102 | 7,092 |
+![Cluster diagnostics](../outputs/figures/16_cluster_diagnostics.png)
 
 ![Store segments](../outputs/figures/17_store_segments.png)
 
-*Figure 6. The groups largely distinguish store scale, with overlap and within-group variation.*
+| Persona, ranked by mean sales | Stores | Mean weekly department sales ($) | Mean area (sq ft) | Mean recorded markdown ($) | Holiday ratio |
+|---|---:|---:|---:|---:|---:|
+| High-volume flagship | 18 | 22,700.25 | 191,117.06 | 9,331.87 | 1.07 |
+| Moderate-scale regional | 19 | 11,281.77 | 110,525.53 | 5,805.83 | 1.10 |
+| Compact community | 8 | 8,970.64 | 40,356.25 | 709.71 | 1.00 |
 
-Segment 1 supports an availability-focused planning pilot because its larger absolute sales variation can create substantial misses. Segment 0 supports smaller initial commitments and tightly scoped campaigns. Segment numbers are arbitrary labels. These proposals should be checked at the department level; clustering does not prove which promotion will work.
+The notebook's sales-per-square-foot values are 0.12, 0.11 and 0.22. Their numerator is average department-row sales, so they should not be presented as whole-store sales density. Markdown means similarly reflect repeated store-week values weighted by department coverage. Personas describe stores, not customers, and their names do not establish specific assortments or shopping missions.
 
-## 7. Department association proxy and cross-selling
+Use these groups to frame controlled availability and campaign pilots. Larger-volume stores may justify closer error monitoring; compact outlets may warrant smaller initial commitments. The clustering does not demonstrate an optimal campaign or inventory policy.
 
-No actual basket analysis is possible. The project defines a proxy high-sales event when a department exceeds its training store-department median during a store-week. Only departments observed in at least 90% of training store-weeks are considered. Each pair uses weeks with both departments observed.
+## 6. Department co-movement through Apriori
 
-Support is the joint event rate. Confidence A→B is the joint event rate divided by A's event rate. Lift divides that confidence by B's event rate. Rules must meet support ≥ 0.10, confidence ≥ 0.50 and lift > 1.
+The top 12 departments by cumulative cleaned revenue form a Store-Date pivot. A high-sales event means a department exceeds its full-period department-wide median, shared across stores. Missing observations become false when compared to the median. Unlike a store-specific threshold, this can encode persistent differences in store scale.
 
-The leading pair is departments 90 and 92. Across 5,355 co-observed store-weeks, support is approximately 0.412, confidence about 0.831 and lift about 1.677. The reverse rule is also reported; the pair is not two independent discoveries. Departments 95 and 97 also show high co-movement.
+Apriori uses minimum support 0.15 and yields 4,095 itemsets. Association rules initially require lift >=1.1, then confidence >=0.45 and lift >1.15; 503,958 rules remain. The leading displayed rule has support 0.187568, confidence 0.908202 and lift 3.372347. It is a multi-department rule, not a simple category pair. Many related rules share itemsets, so the count is not a count of independent discoveries.
 
-![Department co-movement](../outputs/figures/18_department_proxy.png)
+![Association rule space](../outputs/figures/18_association_rules.png)
 
-*Figure 7. High-sales lift suggests shared patterns, not confirmed joint customer purchases.*
+Support is the joint event rate; confidence is the conditional consequent rate given the antecedent; lift compares confidence to consequent prevalence. Shared seasonality and store scale can produce lift without joint purchases. The scatter visualizes the complete filtered rule table, which is dense. Map department IDs to real categories and use simpler, stable rules in controlled tests before proposing cross-selling or layout changes. No customer-basket or incremental-margin outcome is observed.
 
-Map IDs to real department categories before proposing displays. Shared seasonality can generate high lift. Test an appropriate campaign with a control group and measure incremental margin before expanding it.
+## 7. Forecast design and results
 
-## 8. Demand forecasting, validation and tuning
+Feature engineering sorts by Store, Dept, Date and adds ISO week/month/year, sine/cosine seasonality, sales lags of 1/2/4 observations, and shifted four-observation rolling mean and SD. Gaps can make lags differ from exact calendar-week lags. Promotion totals/counts and store format dummy variables are included. After 13,134 warm-up rows are removed, 408,436 rows and 43 columns remain.
 
-The primary evaluation uses an ordered split:
+The split uses the 80th percentile of unique dates. Target-derived anomaly and adjustment columns are excluded, leaving 33 predictors, including numeric store/department IDs.
 
-| Split | Weeks | Rows | Dates |
-|---|---:|---:|---|
-| Initial training | 119 | 350,595 | 2010-02-05 to 2012-05-11 |
-| Validation | 16 | 47,246 | 2012-05-18 to 2012-08-31 |
-| Final test | 8 | 23,729 | 2012-09-07 to 2012-10-26 |
+| Partition | Dates | Rows |
+|---|---|---:|
+| Training | 5 March 2010–13 April 2012 | 325,663 |
+| Holdout | 20 April 2012–26 October 2012 | 82,773 |
 
-Validation contains two expanding eight-week blocks. All observations in a week stay together. For each fold, imputation, category encoding and model fitting use only earlier weeks. Full-period EDA is descriptive and is not used to fit the models.
+The target is Weekly_Sales_ModelReady. WMAE = sum(w * absolute error) / sum(w), with w=5 for supplied holiday rows and 1 otherwise. This is an evaluation weighting; the models are not trained with holiday sample weights.
 
-The historical-average baseline predicts each store-department's past mean and falls back to the global training mean for unseen pairs. Decision trees compare depths 8 and 14, with a minimum of 20 rows per leaf. Random forests compare depths 14 and 20 using 40 trees, a minimum of 10 rows per leaf and random seed 47. This is a small, interpretable parameter comparison rather than an expensive search.
+Ridge uses StandardScaler and alpha=10. Random Forest uses 100 trees and max_depth=14. Default LightGBM uses 250 trees, learning_rate=0.06, max_depth=8, num_leaves=63, subsample=0.8 and colsample_bytree=0.8. Seed is 47.
 
-Select by mean validation MAE. MAE is the average currency error per store-department-week; RMSE emphasizes large misses. Holiday WMAE gives supplied holiday observations five times the weight of ordinary weeks. MAPE is avoided because sales may be zero or negative. Refit the selected method on all pre-test weeks, then assess once on the final test.
+| Model | Train WMAE ($) | Test WMAE ($) | Test RMSE ($) | Test MAE ($) | Test R² |
+|---|---:|---:|---:|---:|---:|
+| Ridge | 2,901.52 | 1,808.42 | 3,271.17 | 1,778.71 | 0.9778 |
+| Random Forest | 1,580.94 | **1,471.72** | 2,988.12 | **1,404.11** | 0.9815 |
+| Default LightGBM | 1,656.75 | 1,484.42 | **2,944.74** | 1,436.34 | **0.9820** |
+| Tuned LightGBM | Not printed | 1,491.80 | 2,967.83 | Not printed | 0.9818 |
 
-The notebook includes a separate fixed-tree diagnostic comparing external inputs to calendar/store-only predictors. Observed historical temperature, economics and actual markdown values are not necessarily known when an operational forecast is made. Results using those fields are conditional estimates; real planning needs scenarios or planned values.
+Random Forest lowers WMAE by about 18.62% versus Ridge. Default LightGBM leads RMSE and R². The notebook nevertheless exports tuned LightGBM; it should not be described as the best WMAE model.
 
-### Measured forecast results
+RandomizedSearchCV evaluates six LightGBM configurations using three TimeSeriesSplit folds and negative unweighted MAE. The selected configuration is num_leaves=31, n_estimators=200, max_depth=12, learning_rate=0.08 and colsample_bytree=1.0. Tuned test WMAE worsens by $7.38 versus default LightGBM and by $20.08 versus Random Forest. The current source does not supply a tuned MAE or CV score table; none is inferred here.
 
-| Configuration | Validation MAE | Validation RMSE |
-|---|---:|---:|
-| Historical mean | 2,665.83 | 5,538.43 |
-| Random forest, depth 20 | 5,565.71 | 8,500.67 |
-| Random forest, depth 14 | 7,146.47 | 10,060.52 |
-| Decision tree, depth 14 | 7,403.76 | 10,446.48 |
-| Decision tree, depth 8 | 9,942.37 | 13,872.76 |
+![Holdout forecast and residuals](../outputs/figures/19_forecast_residuals.png)
 
-Increasing depth reduced decision-tree MAE by 2,538.60 and random-forest MAE by 1,580.76, but neither family beat the baseline. With many one-hot identifiers, these constrained trees have difficulty capturing the store-department differences that historical means represent directly. This is an interpretation of the tested models, not a universal claim about forests. The tested tree models did not meet the baseline-improvement criterion.
+![Feature importances](../outputs/figures/20_feature_importance.png)
 
-There are no supplied holiday weeks in validation. Consequently holiday WMAE equals MAE in both folds and does not establish holiday forecasting quality.
+The parity plot samples up to 2,000 holdout rows; the histogram shows adjusted-target residuals. LightGBM's default feature_importances_ reports split counts. The plot's axis label says gain importance, but the estimator does not request gain importance; interpret this figure as split frequency, not causal contribution or gain.
 
-![Validation comparison](../outputs/figures/19_model_validation.png)
+### Validation limitations
 
-*Figure 8. The simplest method has the lowest validation error.*
+The outer split is chronological, but the data passed to TimeSeriesSplit remains sorted by store and department, then date. Row-based folds therefore do not create globally chronological cutoffs across stores. Search scoring also differs from the stated WMAE priority.
 
-The historical mean was selected using validation only. Its held-out performance is:
+Full-period anomaly treatment uses future data and adjusts test labels before scoring. Holdout lags and rolling features include earlier observed holdout targets, so this resembles rolling prediction with updated actuals rather than a single 28-week forecast issued at the cutoff. Actual current-week promotions and macroeconomic inputs also require forecast-time availability assumptions.
 
-| Selected method | Test MAE | Test RMSE | Test holiday WMAE |
-|---|---:|---:|---:|
-| Historical store-department mean | 2,266.30 | 4,394.57 | 2,431.31 |
+To validate operational performance, fit preprocessing inside date-grouped training folds, evaluate on original sales, define the forecast horizon and input availability, and choose the estimator on validation WMAE before one final untouched test. These corrections would change the experiment and require new results; the reported numbers above preserve the supplied notebook run.
 
-The selected method is the baseline itself, so its improvement over that baseline is exactly zero. The final test includes the supplied holiday week ending 7 September 2012. One holiday week is limited evidence for other holiday periods.
+## 8. Inventory illustration and serialization
 
-![Held-out forecast](../outputs/figures/20_test_forecast.png)
+The notebook pools tuned-LightGBM holdout residuals by department across stores. It assumes two-week lead time and z=1.645, and calculates:
 
-*Figure 9. Aggregate sales and selected forecasts over the final eight weeks. Aggregate alignment can hide department errors; the notebook also reports format and segment error summaries.*
+- Safety stock dollars = ceil(1.645 * residual SD * sqrt(2)).
+- Reorder point dollars = ceil(2 * mean weekly forecast + safety stock dollars).
 
-The fixed-tree diagnostics on the first validation block are:
+| Department | Mean forecast ($) | Residual SD ($) | Safety stock ($) | Reorder point ($) |
+|---|---:|---:|---:|---:|
+| 92 | 77,535.96 | 7,798.83 | 18,144 | 173,216 |
+| 95 | 73,848.87 | 5,671.29 | 13,194 | 160,892 |
+| 38 | 61,091.37 | 7,085.73 | 16,485 | 138,668 |
+| 65 | 48,370.50 | 3,648.14 | 8,487 | 105,229 |
+| 90 | 45,921.96 | 3,334.00 | 7,757 | 99,601 |
 
-| Diagnostic | MAE |
-|---|---:|
-| Raw target and external fields | 7,543.27 |
-| Training-IQR-clipped target and external fields | 7,487.42 |
-| Raw target and calendar/store fields only | 7,520.03 |
+These are dollar proxies based on average department-row forecasts, not chain department totals or physical inventory units. Pooling across stores loses local variability. Normal-error and independent-week assumptions are not validated; z=1.645 is an assumed nominal service factor, not evidence of 95% realized on-shelf availability. Buffers calibrated using holdout residuals need separate future validation. Obtain quantities, prices, lead-time distributions, stock availability and store-specific errors before implementing replenishment.
 
-Clipping improves this tree's MAE by only 55.84, approximately 0.74%, while remaining far worse than the mean baseline. That does not justify removing all flagged sales. The external-input version is slightly worse than the calendar/store-only version in this experiment; the project therefore does not claim that external inputs improve forecasting.
+The serialization cell writes models/retail_demand_forecaster.joblib, containing the tuned estimator, ordered 33-feature list, test WMAE/RMSE/R², service factor, seed and training cutoff. It reloads the estimator and predicts three rows. The supplied notebook records a 565.95-KB artifact and forecasts $33,079.38, $20,780.23 and $32,301.70. The actual integrated artifact is absent from the repository at this update; these are recorded outputs, not a newly reproduced file. Existing sales_forecaster, anomaly_model and store_segmentation artifacts are legacy and must not be used as the integrated models. The new notebook does not serialize its Isolation Forest or K-means models.
 
-The 26-week seasonal experiment gives:
+## 9. Chart exports and reproduction status
 
-| Method | MAE | RMSE | Holiday WMAE |
-|---|---:|---:|---:|
-| Historical mean | 3,384.78 | 9,599.64 | 3,917.01 |
-| Exact 52-week seasonal persistence with fallback | 2,063.45 | 4,622.95 | 2,159.53 |
+The notebook now includes a chart-export setup appendix importing retail_chart_exports.py. Run it once before an ordered analysis rerun. It exports all 20 embedded PNGs and enables live saving at 200 DPI before plt.show(), preserving figure background and tight bounds. Reset setup before another ordered run. Initial image extraction preserves the saved inline resolution; it does not rerender charts at 200 DPI. The [gallery](../outputs/figures/README.md) maps every filename to its analysis.
 
-Seasonal lookup covers 96.87% of this block; other rows use a training-only mean fallback. Its MAE is about 39.04% lower than the mean on this same 26-week block. This is a different evaluation period from the final eight-week test, so its score cannot be directly used to claim superiority on that final test. Further chronological evaluation would be required before replacing the selected primary model.
+This update validates the helper, image inventory and documentation references, but does not rerun expensive training, Apriori or model serialization. The existing notebook's recorded metrics and figures are preserved. Superseded notebooks and old charts have been removed; outputs/figures/ contains the current chart set.
 
-## 9. Longer-horizon forecasting and saved models
+## 10. Practical use
 
-A separate 26-week block ending before the primary validation period compares a historical mean with exact 52-week seasonal persistence. The seasonal forecast uses sales from 364 days earlier and a training-only mean fallback where that date is unavailable. Every referenced sales label predates the 26-week forecast origin. Coverage is reported rather than assuming every series has complete history.
+Prioritize anomaly review using source records rather than automatically interpreting flags as stockouts. Use store personas and co-movement rules to frame small controlled pilots. Track raw-target errors by store, department, holiday and horizon. Resolve the validation limitations before claiming model superiority in deployment, then calibrate physical inventory buffers on new periods. No measured revenue uplift, margin improvement or service-level guarantee is established by the current data.
 
-This illustrates a practical distinction: calendar and seasonal baselines require no observed future economic fields, while the external-input models need forecast-time input plans. One historical block and fewer than three years of labels limit evidence for longer-term planning.
 
-Saved artifacts include the selected sales forecaster, its input columns and training end date, the IQR anomaly bounds and the standardized K-means model. The forecaster is reloaded and checked against predictions from target-free test inputs. This is a reproducibility check, not evidence of production readiness.
-
-## 10. Strategy and real-world challenges
-
-1. **Inventory:** prioritize review of high-error departments and volatile stores. Convert sales forecasts to units only after obtaining prices, assortment and lead times. Do not calculate safety stock from sales currency alone.
-2. **Anomalies:** use flags to investigate source logs, returns, promotions and holiday calendars. Correct verified errors and retain legitimate demand peaks.
-3. **Marketing:** tailor small pilots to the measured store profiles. Keep promotion assumptions explicit and evaluate incremental margin rather than total sales alone.
-4. **Cross-selling:** validate department mappings and campaign feasibility before acting on proxy rules.
-5. **Store optimization:** compare formats and scale before declaring a store inefficient. Revenue rankings omit costs, margins and local demand.
-6. **Monitoring:** track MAE, RMSE and holiday errors by department, format and segment. Reassess after assortment or promotion changes.
-
-Key challenges include incomplete promotion histories, uncertain future inputs, no customer baskets, no stockout records and short time coverage. These prevent causal personalization claims and direct unit-level replenishment decisions. Use results to guide review and controlled pilots.
